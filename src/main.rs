@@ -17,7 +17,8 @@ fn main() {
 
         if num_bytes == 0 {
             std::thread::sleep(std::time::Duration::from_millis(500));
+            continue;
         }
-        println!("{line}");
+        print!("{line}");
     }
 }
