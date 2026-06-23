@@ -3,9 +3,7 @@ use std::{
     io::{BufRead, BufReader},
 };
 
-fn main() {
-    let file_path = "/Users/carlosherrera/Library/Logs/Wizards Of The Coast/MTGA/Player.log";
-
+fn follow(file_path: &str) {
     let file = File::open(file_path).expect("Should open file.");
     let mut reader = BufReader::new(file);
 
@@ -21,4 +19,10 @@ fn main() {
         }
         print!("{line}");
     }
+}
+
+fn main() {
+    let file_path = "/Users/carlosherrera/Library/Logs/Wizards Of The Coast/MTGA/Player.log";
+
+    follow(file_path);
 }
