@@ -8,24 +8,43 @@ enum Event {
     Raw { name: String, payload: String },
 }
 
+enum State {
+    Idle,
+    AwaitingArrow,
+    AwaitingBody { name: String },
+}
+
 struct Parser {
-    pending: Option<String>,
+    state: State,
 }
 
 impl Parser {
     fn new() -> Self {
-        Parser { pending: None }
+        Parser { state: State::Idle }
     }
 
     fn push(&mut self, line: &str) -> Option<Event> {
-        if let Some(name) = self.pending.take() {
-            let payload = line.trim();
-            if payload.starts_with('{') {
-                return Some(Event::Raw {
-                    name,
-                    payload: payload.to_string(),
-                });
+        match std::mem::replace(&mut self.state, State::Idle) {
+            State::AwaitingBody { name } => {
+                let payload = line.trim();
+                if payload.starts_with("{") {
+                    return Some(Event::Raw {
+                        name,
+                        payload: payload.to_string(),
+                    });
+                }
             }
+
+            State::AwaitingArrow => {
+                if let Some(after) = line.trim().strip_prefix("<==") {
+                    let name_end = after.find('(').unwrap_or(after.len());
+                    self.state = State::AwaitingBody {
+                        name: after[..name_end].trim().to_string(),
+                    }
+                };
+                return None;
+            }
+            State::Idle => {}
         }
 
         let message = line.strip_prefix("[UnityCrossThreadLogger]")?;
@@ -35,14 +54,19 @@ impl Parser {
             None => (message, String::new()),
         };
 
-        let name = if let Some(arrow) = header.find("==>").or_else(|| header.find("<==")) {
+        let name = if let Some(arrow) = header.find("==>") {
             let after_arrow = header[arrow + 3..].trim();
             let name_end = after_arrow.find('(').unwrap_or(after_arrow.len());
             after_arrow[..name_end].trim().to_string()
         } else if header.contains("Match to") {
-            self.pending = Some(header.rsplit(":").next()?.trim().to_string());
+            self.state = State::AwaitingBody {
+                name: header.rsplit(":").next()?.trim().to_string(),
+            };
             return None;
         } else {
+            if payload.is_empty() {
+                self.state = State::AwaitingArrow;
+            }
             return None;
         };
 
