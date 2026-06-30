@@ -11,7 +11,7 @@ enum Event {
 enum State {
     Idle,
     AwaitingArrow,
-    AwaitingBody { name: String },
+    AwaitingBody { name: String, body: String },
 }
 
 struct Parser {
@@ -25,14 +25,16 @@ impl Parser {
 
     fn push(&mut self, line: &str) -> Option<Event> {
         match std::mem::replace(&mut self.state, State::Idle) {
-            State::AwaitingBody { name } => {
-                let payload = line.trim();
-                if payload.starts_with("{") {
+            State::AwaitingBody { name, mut body } => {
+                body.push_str(&line);
+                if json_complete(&body) {
                     return Some(Event::Raw {
                         name,
-                        payload: payload.to_string(),
+                        payload: body.trim().to_string(),
                     });
                 }
+                self.state = State::AwaitingBody { name, body };
+                return None;
             }
 
             State::AwaitingArrow => {
@@ -40,6 +42,7 @@ impl Parser {
                     let name_end = after.find('(').unwrap_or(after.len());
                     self.state = State::AwaitingBody {
                         name: after[..name_end].trim().to_string(),
+                        body: String::new(),
                     }
                 };
                 return None;
@@ -61,6 +64,7 @@ impl Parser {
         } else if header.contains("Match to") {
             self.state = State::AwaitingBody {
                 name: header.rsplit(":").next()?.trim().to_string(),
+                body: String::new(),
             };
             return None;
         } else {
@@ -72,6 +76,37 @@ impl Parser {
 
         Some(Event::Raw { name, payload })
     }
+}
+
+fn json_complete(s: &str) -> bool {
+    let mut depth = 0;
+    let mut opened = false;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for ch in s.chars() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+        } else {
+            match ch {
+                '"' => in_string = true,
+                '{' => {
+                    depth += 1;
+                    opened = true;
+                }
+                '}' => depth -= 1,
+                _ => {}
+            }
+        }
+    }
+
+    opened && depth == 0 && !in_string
 }
 
 fn follow(file_path: &str) {
